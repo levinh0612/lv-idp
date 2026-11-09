@@ -1,0 +1,586 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LV-IDP – Kế hoạch thiết kế</title>
+<style>
+:root{--bg:#fafaf9;--fg:#1c1917;--muted:#57534e;--card:#fff;--line:#e7e5e4;--acc:#2563eb;--acc2:#7c3aed;--ok:#15803d;--warn:#b45309;--code:#f5f5f4}
+@media (prefers-color-scheme:dark){:root{--bg:#0c0a09;--fg:#e7e5e4;--muted:#a8a29e;--card:#1c1917;--line:#292524;--acc:#60a5fa;--acc2:#a78bfa;--ok:#4ade80;--warn:#fbbf24;--code:#292524}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{display:grid;grid-template-columns:240px minmax(0,1fr);max-width:1280px;margin:0 auto}
+nav{position:sticky;top:0;align-self:start;height:100vh;overflow:auto;padding:24px 16px;border-right:1px solid var(--line);font-size:13.5px}
+nav b{display:block;margin-bottom:10px;font-size:15px}
+nav a{display:block;padding:3px 0;color:var(--muted);text-decoration:none}
+nav a:hover{color:var(--acc)}
+main{padding:32px 32px 80px;min-width:0}
+h1{font-size:30px;margin:0 0 6px}
+h2{font-size:22px;margin:48px 0 12px;padding-top:12px;border-top:1px solid var(--line)}
+h3{font-size:16px;margin:24px 0 8px}
+p.lead{color:var(--muted);font-size:16px;margin-top:0}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin:12px 0;display:block;overflow-x:auto}
+th,td{border:1px solid var(--line);padding:7px 10px;text-align:left;vertical-align:top}
+th{background:var(--code)}
+code{background:var(--code);padding:1px 5px;border-radius:4px;font-size:12.5px}
+pre{background:var(--code);padding:12px;border-radius:8px;overflow:auto;font-size:12.5px}
+.tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:99px;font-weight:600;border:1px solid}
+.mvp{color:var(--ok);border-color:var(--ok)}.p1{color:var(--acc);border-color:var(--acc)}.p2{color:var(--warn);border-color:var(--warn)}
+.mermaid{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px;margin:14px 0;overflow:auto;text-align:center}
+.note{border-left:4px solid var(--warn);padding:8px 14px;background:var(--card);border-radius:0 8px 8px 0;margin:14px 0}
+.phase{border-left:4px solid var(--acc);padding-left:14px;margin:18px 0}
+@media (max-width:820px){.wrap{display:block}nav{display:none}main{padding:20px 16px 60px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+<b>LV-IDP</b>
+<a href="#s1">1. Tổng quan &amp; mục tiêu</a>
+<a href="#s2">2. Khảo sát thế giới</a>
+<a href="#s3">3. Chuẩn giao thức</a>
+<a href="#s4">4. Kiến trúc tổng thể</a>
+<a href="#s5">5. Chức năng (feature map)</a>
+<a href="#s6">6. Luồng chính (sequence)</a>
+<a href="#s7">7. Extensibility / SPI</a>
+<a href="#s8">8. Data model</a>
+<a href="#s9">9. Authorization model</a>
+<a href="#s10">10. Security checklist</a>
+<a href="#s11">11. Tech stack &amp; deploy</a>
+<a href="#s12">12. Roadmap 20 ngày</a>
+<a href="#s13">13. Quyết định (ADR) &amp; rủi ro</a>
+</nav>
+<main>
+
+<h1>LV-IDP – Identity Provider đa năng</h1>
+<p class="lead">Một auth service dùng chung cho mọi ứng dụng: nhiều kiểu đăng nhập (local, Google, Facebook, GitHub, Keycloak/OIDC, SAML, LDAP), nhiều loại database người dùng, và authorization (RBAC → ReBAC). Tài liệu này là bản thiết kế; từng bước thực hiện nằm ở <code>docs/days/</code>.</p>
+
+<!-- 1 -->
+<h2 id="s1">1. Tổng quan &amp; mục tiêu</h2>
+<div class="grid">
+<div class="card"><b>Mục tiêu</b><ul>
+<li>Là <b>OAuth2 / OIDC Provider</b> chuẩn, app nào cũng tích hợp được bằng thư viện có sẵn.</li>
+<li>Là <b>Identity Broker</b>: gom nhiều nguồn đăng nhập về một danh tính thống nhất.</li>
+<li>Là <b>User Federation</b>: đọc user từ DB/LDAP có sẵn, không bắt migrate một lần.</li>
+<li>Cung cấp <b>Authorization</b> (role, permission, policy) cho các service.</li>
+<li>Multi-tenant (realm/tenant), có Admin API/UI, audit đầy đủ.</li>
+</ul></div>
+<div class="card"><b>Không làm (non-goals) ở v1</b><ul>
+<li>Tự viết thuật toán mật mã / parser XML-DSig (dùng thư viện đã kiểm chứng).</li>
+<li>Full SAML IdP (chỉ làm SAML upstream trước; SAML IdP ở P2).</li>
+<li>Theme engine phức tạp như Keycloak.</li>
+<li>Chạy cluster đa vùng (multi-region active-active).</li>
+</ul></div>
+<div class="card"><b>Nguyên tắc thiết kế</b><ul>
+<li><b>Chuẩn trước, tự chế sau</b>: bám RFC/OIDC để tương thích.</li>
+<li><b>Tách bạch</b> Authentication / Token / Authorization.</li>
+<li><b>Mọi thứ cắm được</b> qua SPI (provider, storage, authenticator, mapper).</li>
+<li><b>Secure by default</b>: PKCE bắt buộc, rotation, rate-limit.</li>
+<li><b>Stateless ở tầng token</b>, state ngắn hạn ở Redis, state lâu dài ở PostgreSQL.</li>
+</ul></div>
+</div>
+<div class="note"><b>Lưu ý trung thực:</b> Keycloak, Zitadel, Authentik đã làm gần như đủ danh sách này. Dự án này hợp lý nếu mục đích là <b>học sâu + kiểm soát hoàn toàn + tích hợp đặc thù</b> (ví dụ iDempiere, DB legacy). Nếu chỉ cần chạy production nhanh, nên cân nhắc dùng Keycloak/Zitadel và chỉ viết phần SPI riêng. Hướng đề xuất: <b>dùng Spring Authorization Server làm lõi giao thức</b>, tự xây phần Broker, Storage SPI, MFA, Authorization ở trên nó.</div>
+
+<!-- 2 -->
+<h2 id="s2">2. Khảo sát: các hệ thống lớn thiết kế thế nào</h2>
+<table>
+<tr><th>Hệ thống</th><th>Ngôn ngữ</th><th>Kiến trúc nổi bật</th><th>Bài học áp dụng</th></tr>
+<tr><td><b>Keycloak</b> (CNCF)</td><td>Java / Quarkus</td><td>Realm (tenant), Client, Role; SPI cho UserStorage, Authenticator, IdP Mapper, Event Listener; Identity Brokering; Authorization Services. Dòng 26.x: <b>Organizations</b> (multi-tenancy trong 1 realm, supported từ 26.0), <b>Passkeys chính thức từ 26.4</b>, hỗ trợ FAPI 2, DPoP.</td><td>Mô hình <b>Realm + SPI</b>. Nhưng SPI quá nhiều và nặng → chỉ giữ 4–5 SPI cốt lõi.</td></tr>
+<tr><td><b>Ory</b> (Kratos / Hydra / Keto / Oathkeeper)</td><td>Go</td><td>Tách riêng: Kratos = identity &amp; flows, Hydra = OAuth2/OIDC, Keto = permission (Zanzibar), Oathkeeper = proxy. API-first, headless (không có UI sẵn).</td><td><b>Tách concern</b> thành module độc lập trong cùng repo; login UI tách khỏi protocol engine.</td></tr>
+<tr><td><b>Zitadel</b></td><td>Go</td><td><b>Event sourcing + CQRS</b>: mọi thay đổi là event, audit "miễn phí"; multi-tenant (Instance → Organization → Project).</td><td>Ghi <b>audit/event</b> như first-class; cân nhắc outbox pattern.</td></tr>
+<tr><td><b>Authentik</b></td><td>Python / Django</td><td><b>Flows &amp; Stages</b>: đăng nhập là một pipeline cấu hình được (identification → password → MFA → consent).</td><td>Authentication engine dạng <b>pipeline</b> thay vì if/else cứng → thêm MFA/risk-check dễ.</td></tr>
+<tr><td><b>Dex</b> (CNCF)</td><td>Go</td><td>Chỉ làm federation: "OIDC front, nhiều connector phía sau" (GitHub, LDAP, SAML, OIDC...). Interface connector rất nhỏ.</td><td>Interface <code>Connector</code> tối giản: <code>login URL</code> + <code>handle callback → Identity</code>.</td></tr>
+<tr><td><b>Auth0 / Okta</b> (SaaS)</td><td>—</td><td>Universal Login (trang hosted), <b>Actions/Hooks</b> (code chèn vào pipeline), Organizations (B2B), Attack Protection (brute-force, breached password), Connections (DB, social, enterprise).</td><td>Cho phép <b>hook</b> trước/sau login; "Connection" = cấu hình nguồn danh tính; bảo vệ tấn công.</td></tr>
+<tr><td><b>AWS Cognito / Entra External ID / Firebase Auth</b></td><td>—</td><td>User Pool (directory) + Identity Pool (cấp credential cloud); Lambda triggers.</td><td>Hạn chế customize → lý do phải tự xây. Triggers ≈ hooks.</td></tr>
+<tr><td><b>FusionAuth / Casdoor</b></td><td>Java / Go</td><td>API-first, tenant, lambdas (JS) map claim; Casdoor hỗ trợ rất nhiều provider.</td><td>Claim mapping bằng script/cấu hình; danh sách provider tái dùng được.</td></tr>
+<tr><td><b>Google Zanzibar</b> → SpiceDB, <b>OpenFGA (CNCF Incubating từ 28/10/2025)</b>, Keto</td><td>—</td><td>Authorization là <b>dịch vụ riêng</b>, lưu quan hệ <code>object#relation@subject</code>, API <code>Check</code>/<code>Expand</code>/<code>ListObjects</code>.</td><td>Từ RBAC lên <b>ReBAC</b> khi cần (chia sẻ tài liệu, cây tổ chức). Không nhét hết permission vào JWT.</td></tr>
+</table>
+<h3>Rút ra 8 pattern chung</h3>
+<ol>
+<li><b>Tenant/Realm là ranh giới cô lập</b> (issuer, key, user, client đều theo tenant).</li>
+<li><b>Protocol layer mỏng</b> (OIDC/OAuth2/SAML) ↔ <b>Authentication engine</b> ↔ <b>User store</b>.</li>
+<li><b>Federation qua connector</b> với interface nhỏ; mapping claim cấu hình được.</li>
+<li><b>Authentication = pipeline các bước</b> (flow/stage), có điều kiện (risk, MFA).</li>
+<li><b>Key management riêng</b>: rotate khóa ký, JWKS có nhiều key (<code>kid</code>).</li>
+<li><b>Refresh token rotation + reuse detection</b>, session có thể revoke.</li>
+<li><b>Authorization tách khỏi Authentication</b>; token chỉ mang claim thô (roles/scope), quyết định chi tiết hỏi policy service.</li>
+<li><b>Event/Audit first-class</b>, có webhook cho hệ thống ngoài.</li>
+</ol>
+
+<!-- 3 -->
+<h2 id="s3">3. Chuẩn giao thức cần hỗ trợ</h2>
+<div class="note"><b>Đã đối chiếu web (11/2026):</b> Spring Authorization Server sáp nhập vào Spring Security 7 · OAuth 2.1 vẫn là draft (-16), RFC 9700 là BCP hiện hành · WebAuthn Level 3 thành W3C Recommendation 25/08/2026 · FAPI 2.0 Security Profile đã Final · OpenFGA lên CNCF Incubating · Keycloak 26.x (Organizations, Passkeys). Nguồn gồm trang chính thức (spring.io, w3.org, rfc-editor, openid.net, cncf.io, keycloak.org) và một số blog thứ cấp; số phiên bản cụ thể (Spring Security 7.1.x, Keycloak 26.x) cần xác nhận lại ở trang release chính thức khi bắt đầu code.</div>
+<table>
+<tr><th>Nhóm</th><th>Chuẩn</th><th>Ưu tiên</th></tr>
+<tr><td>OAuth 2</td><td>RFC 6749 (core), 6750 (Bearer), <b>7636 PKCE</b>, <b>RFC 9700 (Security BCP, BCP 240, 01/2025)</b>, <b>RFC 9207</b> (tham số <code>iss</code> chống mix-up). OAuth 2.1 <b>vẫn là Internet-Draft</b> (draft-ietf-oauth-v2-1-16, 09/2026, đã gửi IESG) – dùng như checklist: bỏ implicit/ROPC, PKCE bắt buộc, redirect URI exact match.</td><td><span class="tag mvp">MVP</span></td></tr>
+<tr><td>Browser/SPA</td><td>BCP "OAuth 2.0 for Browser-Based Applications" (đã xuất bản thành RFC 10017, 08/2026 – xác nhận lại tại rfc-editor.org) → khuyến nghị mô hình <b>BFF</b></td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>OIDC</td><td>OIDC Core 1.0, Discovery, UserInfo, RP-Initiated Logout, Back-Channel Logout</td><td><span class="tag mvp">MVP</span></td></tr>
+<tr><td>Token</td><td>JWT 7519, JWS/JWK 7515/7517, <b>RFC 9068</b> (JWT access token profile), Introspection 7662, Revocation 7009</td><td><span class="tag mvp">MVP</span></td></tr>
+<tr><td>Grant mở rộng</td><td>Client Credentials, Refresh, <b>Device 8628</b>, <b>Token Exchange 8693</b></td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>Đăng ký client</td><td>Dynamic Client Registration 7591</td><td><span class="tag p2">P2</span></td></tr>
+<tr><td>Sender-constrained token</td><td><b>DPoP 9449</b> (Spring Security, Keycloak, Zitadel, Ory Hydra đều hỗ trợ sẵn → nên có ở P1, bật tuỳ client)</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>Hardening</td><td>PAR 9126, JAR 9101, Resource Indicators 8707, <b>FAPI 2.0 Security Profile (Final từ 02/2025, có conformance test chính thức)</b></td><td><span class="tag p2">P2</span></td></tr>
+<tr><td>Federation</td><td>OIDC upstream, OAuth2 upstream (GitHub/Facebook), SAML 2.0 SP, LDAP</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>MFA / Passwordless</td><td>TOTP 6238, <b>WebAuthn Level 3 – W3C Recommendation từ 25/08/2026</b> (Level 2: 04/2021; tính năng mới vào Level 4), Passkeys, Email/SMS OTP, recovery codes</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>Provisioning</td><td>SCIM 2.0 (RFC 7643/7644)</td><td><span class="tag p2">P2</span></td></tr>
+</table>
+
+<!-- 4 -->
+<h2 id="s4">4. Kiến trúc tổng thể</h2>
+<p>Bắt đầu bằng <b>modular monolith</b> (một process, nhiều module có ranh giới rõ), tách thành service khi có áp lực thật sự (scale, team). Ít vận hành hơn microservice mà vẫn giữ được ranh giới sạch.</p>
+<pre class="mermaid">
+flowchart LR
+  subgraph Clients["Clients"]
+    WEB["Web SPA / SSR"]
+    MOB["Mobile App"]
+    M2M["Backend Service M2M"]
+    LEG["Legacy App SAML"]
+  end
+  subgraph IDP["LV-IDP"]
+    EDGE["Edge: TLS, rate limit, WAF"]
+    PROTO["Protocol Layer: OAuth2 + OIDC + SAML"]
+    AUTHN["Authentication Engine: flows, MFA, risk"]
+    BROKER["Identity Broker"]
+    USTORE["User Storage SPI"]
+    TOKEN["Token Service + Key Management"]
+    AUTHZ["Authorization Service: RBAC, ABAC, ReBAC"]
+    ADMIN["Admin API + Admin UI"]
+    EVT["Event Bus + Audit + Webhooks"]
+  end
+  subgraph Data["Data"]
+    PG[("PostgreSQL")]
+    RD[("Redis")]
+    EXT[("External DB / LDAP")]
+  end
+  subgraph Upstream["Upstream IdPs"]
+    GG["Google"]
+    FB["Facebook"]
+    GH["GitHub"]
+    KC["Keycloak / any OIDC"]
+    SAMLIDP["Enterprise SAML"]
+  end
+  WEB --> EDGE
+  MOB --> EDGE
+  M2M --> EDGE
+  LEG --> EDGE
+  EDGE --> PROTO
+  PROTO --> AUTHN
+  AUTHN --> USTORE
+  AUTHN --> BROKER
+  PROTO --> TOKEN
+  PROTO --> AUTHZ
+  BROKER --> GG
+  BROKER --> FB
+  BROKER --> GH
+  BROKER --> KC
+  BROKER --> SAMLIDP
+  USTORE --> PG
+  USTORE --> EXT
+  TOKEN --> PG
+  AUTHN --> RD
+  AUTHZ --> PG
+  ADMIN --> AUTHN
+  ADMIN --> AUTHZ
+  AUTHN --> EVT
+  TOKEN --> EVT
+  EVT --> PG
+</pre>
+<h3>Cấu trúc module (Maven multi-module)</h3>
+<table>
+<tr><th>Module</th><th>Trách nhiệm</th></tr>
+<tr><td><code>idp-core</code></td><td>Domain model, interface SPI, event, exception. Không phụ thuộc framework web.</td></tr>
+<tr><td><code>idp-persistence</code></td><td>JPA entities, repository, Flyway migrations, tenant filter.</td></tr>
+<tr><td><code>idp-server</code></td><td>Spring Authorization Server, endpoint OIDC, login UI (Thymeleaf), session, consent.</td></tr>
+<tr><td><code>idp-authn</code></td><td>Authentication engine (flow/stage), password, MFA (TOTP, WebAuthn), rate-limit, risk.</td></tr>
+<tr><td><code>idp-federation</code></td><td>Identity Broker: connector Google/GitHub/Facebook/OIDC/SAML, claim mapper, account linking.</td></tr>
+<tr><td><code>idp-storage</code></td><td>User Storage SPI: local JPA, external JDBC, LDAP; lazy migration.</td></tr>
+<tr><td><code>idp-authz</code></td><td>RBAC, policy evaluator, ReBAC (tuple store hoặc OpenFGA client), Check API.</td></tr>
+<tr><td><code>idp-admin-api</code> / <code>idp-admin-ui</code></td><td>REST quản trị (tenant, client, user, provider, role); UI React.</td></tr>
+<tr><td><code>idp-spring-boot-starter</code></td><td>SDK cho app khác: resource server config, annotation <code>@RequirePermission</code>.</td></tr>
+</table>
+
+<!-- 5 -->
+<h2 id="s5">5. Chức năng (feature map)</h2>
+<table>
+<tr><th>Nhóm</th><th>Chức năng</th><th>Mức</th></tr>
+<tr><td rowspan="5"><b>Authentication</b></td><td>Đăng ký, đăng nhập username/email + password (Argon2id)</td><td><span class="tag mvp">MVP</span></td></tr>
+<tr><td>Verify email, quên/đổi mật khẩu, password policy, breached-password check</td><td><span class="tag mvp">MVP</span></td></tr>
+<tr><td>MFA: TOTP, recovery codes, Email OTP</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>Passkeys / WebAuthn (passwordless)</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>Step-up auth (yêu cầu MFA cho thao tác nhạy cảm, <code>acr</code>/<code>amr</code>)</td><td><span class="tag p2">P2</span></td></tr>
+<tr><td rowspan="4"><b>Federation</b></td><td>Social: Google, GitHub, Facebook</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>Generic OIDC (Keycloak, Azure AD, Okta...) cấu hình qua Admin</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>SAML 2.0 upstream; LDAP/AD</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>Account linking, claim/role mapping, JIT provisioning</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td rowspan="3"><b>User storage</b></td><td>Local PostgreSQL</td><td><span class="tag mvp">MVP</span></td></tr>
+<tr><td>External JDBC (Postgres/MySQL/Oracle/SQL Server) cấu hình query + hash legacy</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>Lazy migration (đăng nhập thành công → rehash Argon2id → import)</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td rowspan="5"><b>OAuth2/OIDC</b></td><td>Authorization Code + PKCE, Refresh rotation, Consent</td><td><span class="tag mvp">MVP</span></td></tr>
+<tr><td>JWKS + key rotation, Discovery, UserInfo, Introspection, Revocation</td><td><span class="tag mvp">MVP</span></td></tr>
+<tr><td>Client Credentials, Device Code, Token Exchange</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>SSO session, RP-Initiated &amp; Back-Channel Logout</td><td><span class="tag mvp">MVP</span></td></tr>
+<tr><td>DPoP, PAR, Dynamic Client Registration, SAML IdP</td><td><span class="tag p2">P2</span></td></tr>
+<tr><td rowspan="4"><b>Authorization</b></td><td>RBAC: role, permission, scope, group; role theo tenant/client</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>Check API <code>POST /authz/check</code> + cache</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>ABAC / policy (điều kiện theo thuộc tính, thời gian, IP)</td><td><span class="tag p2">P2</span></td></tr>
+<tr><td>ReBAC kiểu Zanzibar (OpenFGA/SpiceDB hoặc tự làm tuple store)</td><td><span class="tag p2">P2</span></td></tr>
+<tr><td rowspan="4"><b>Admin &amp; Ops</b></td><td>Admin API + UI: tenant, client, user, provider, role, session</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>Audit log, event → webhook, GDPR export/delete</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>Observability: OpenTelemetry, Prometheus, health, structured logs</td><td><span class="tag p1">P1</span></td></tr>
+<tr><td>Hooks/Actions (script trước/sau login, enrich token)</td><td><span class="tag p2">P2</span></td></tr>
+</table>
+
+<!-- 6 -->
+<h2 id="s6">6. Luồng chính</h2>
+<h3>6.1 Authorization Code + PKCE với social login (broker)</h3>
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant U as User Browser
+  participant C as Client App
+  participant I as LV-IDP
+  participant G as Google
+  C->>U: redirect to /authorize with code_challenge, state, nonce
+  U->>I: GET /authorize
+  I-->>U: login page (local, Google, GitHub...)
+  U->>I: choose Google
+  I->>U: redirect to Google (own state + PKCE)
+  U->>G: authenticate and consent
+  G-->>U: redirect to IDP callback with code
+  U->>I: GET /broker/google/callback
+  I->>G: POST /token
+  G-->>I: id_token + access_token
+  I->>I: map claims, link existing user or JIT create
+  I->>I: MFA step if policy requires
+  I-->>U: redirect to client redirect_uri with code
+  U->>C: code
+  C->>I: POST /token with code_verifier
+  I-->>C: access_token, id_token, refresh_token
+</pre>
+
+<h3>6.2 Đăng nhập bằng DB ngoài + lazy migration</h3>
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant A as Authn Engine
+  participant L as Local Storage
+  participant X as External JDBC Storage
+  U->>A: username + password
+  A->>L: findByUsername
+  L-->>A: not found
+  A->>X: findByUsername (query cấu hình theo tenant)
+  X-->>A: row + legacy hash
+  A->>X: verify using legacy algorithm (bcrypt, pbkdf2, md5+salt...)
+  X-->>A: valid
+  A->>L: import user, rehash with Argon2id, link external id
+  A-->>U: success, continue flow (MFA, consent)
+  Note over A,L: Lần sau đăng nhập chỉ cần Local Storage
+</pre>
+
+<h3>6.3 Refresh token rotation + reuse detection</h3>
+<pre class="mermaid">
+sequenceDiagram
+  autonumber
+  participant C as Client
+  participant I as LV-IDP
+  participant DB as Token Store
+  C->>I: POST /token grant=refresh_token (RT1)
+  I->>DB: find RT1 in family F
+  alt RT1 is current
+    I->>DB: mark RT1 used, issue RT2 in family F
+    I-->>C: new access_token + RT2
+  else RT1 already used (reuse detected)
+    I->>DB: revoke entire family F and SSO session
+    I-->>C: 400 invalid_grant
+  end
+</pre>
+
+<h3>6.4 Authentication pipeline (flow/stage, học từ Authentik)</h3>
+<pre class="mermaid">
+flowchart LR
+  S["Identification: username / social / passkey"] --> P["Credential: password or federated"]
+  P --> R{"Risk or policy needs MFA?"}
+  R -- yes --> M["MFA stage: TOTP / WebAuthn / OTP"]
+  R -- no --> C
+  M --> C["Consent stage"]
+  C --> T["Issue session + code"]
+  P -. fail .-> B["Rate limit / lockout / audit"]
+</pre>
+
+<!-- 7 -->
+<h2 id="s7">7. Extensibility: các SPI chính</h2>
+<p>Chỉ giữ 5 điểm mở rộng để tránh "SPI sprawl" như Keycloak. Mỗi SPI là một interface trong <code>idp-core</code>, implementation đăng ký bằng Spring bean + tên type, cấu hình lưu theo tenant trong DB.</p>
+<pre>
+public interface FederationConnector {            // Google, GitHub, Facebook, OIDC, SAML
+    String type();
+    URI buildAuthorizationRequest(ConnectorContext ctx, String state, String nonce);
+    ExternalIdentity handleCallback(ConnectorContext ctx, HttpServletRequest req);
+}
+
+public interface UserStorageProvider {            // Local JPA, External JDBC, LDAP
+    String type();
+    Optional&lt;UserRecord&gt; findByUsername(StorageContext ctx, String username);
+    Optional&lt;UserRecord&gt; findByExternalId(StorageContext ctx, String id);
+    boolean verifyCredential(StorageContext ctx, UserRecord u, char[] password);
+    default boolean readOnly() { return true; }
+}
+
+public interface Authenticator {                  // 1 stage trong flow: password, totp, webauthn...
+    String id();
+    StageResult authenticate(FlowContext ctx);    // CONTINUE | CHALLENGE | FAIL
+}
+
+public interface ClaimMapper {                    // biến đổi claim upstream/nội bộ → token claim
+    Map&lt;String,Object&gt; map(MappingContext ctx);
+}
+
+public interface EventListener {                  // audit, webhook, metrics
+    void on(IdpEvent event);
+}
+</pre>
+
+<!-- 8 -->
+<h2 id="s8">8. Data model (PostgreSQL)</h2>
+<pre class="mermaid">
+erDiagram
+  TENANT ||--o{ APP_USER : has
+  TENANT ||--o{ OAUTH_CLIENT : has
+  TENANT ||--o{ IDP_CONNECTION : configures
+  TENANT ||--o{ USER_STORAGE_CONFIG : configures
+  TENANT ||--o{ SIGNING_KEY : owns
+  APP_USER ||--o{ CREDENTIAL : owns
+  APP_USER ||--o{ FEDERATED_IDENTITY : links
+  APP_USER ||--o{ USER_ROLE : assigned
+  APP_USER ||--o{ SSO_SESSION : opens
+  ROLE ||--o{ USER_ROLE : grants
+  ROLE ||--o{ ROLE_PERMISSION : contains
+  PERMISSION ||--o{ ROLE_PERMISSION : in
+  OAUTH_CLIENT ||--o{ CONSENT : receives
+  SSO_SESSION ||--o{ REFRESH_TOKEN : issues
+  IDP_CONNECTION ||--o{ FEDERATED_IDENTITY : source
+  TENANT {
+    uuid id PK
+    string slug
+    string issuer
+    string status
+  }
+  APP_USER {
+    uuid id PK
+    uuid tenant_id FK
+    string username
+    string email
+    boolean email_verified
+    string status
+    jsonb attributes
+  }
+  CREDENTIAL {
+    uuid id PK
+    uuid user_id FK
+    string type
+    string secret_hash
+    jsonb data
+  }
+  FEDERATED_IDENTITY {
+    uuid id PK
+    uuid user_id FK
+    uuid connection_id FK
+    string external_subject
+  }
+  OAUTH_CLIENT {
+    uuid id PK
+    uuid tenant_id FK
+    string client_id
+    string auth_method
+    jsonb redirect_uris
+    jsonb grant_types
+    jsonb scopes
+  }
+  IDP_CONNECTION {
+    uuid id PK
+    uuid tenant_id FK
+    string type
+    jsonb config_encrypted
+    jsonb claim_mappings
+  }
+  USER_STORAGE_CONFIG {
+    uuid id PK
+    uuid tenant_id FK
+    string type
+    jsonb config_encrypted
+    int priority
+  }
+  SIGNING_KEY {
+    uuid id PK
+    uuid tenant_id FK
+    string kid
+    string alg
+    string status
+    string private_key_encrypted
+  }
+  SSO_SESSION {
+    uuid id PK
+    uuid user_id FK
+    timestamp expires_at
+    string amr
+  }
+  REFRESH_TOKEN {
+    uuid id PK
+    uuid session_id FK
+    uuid family_id
+    string token_hash
+    timestamp used_at
+  }
+  ROLE {
+    uuid id PK
+    uuid tenant_id FK
+    string name
+  }
+  PERMISSION {
+    uuid id PK
+    string code
+  }
+  USER_ROLE {
+    uuid user_id FK
+    uuid role_id FK
+  }
+  ROLE_PERMISSION {
+    uuid role_id FK
+    uuid permission_id FK
+  }
+  CONSENT {
+    uuid id PK
+    uuid user_id FK
+    uuid client_id FK
+    jsonb scopes
+  }
+</pre>
+<p>Ngoài ra: <code>audit_event</code> (append-only, partition theo tháng), <code>mfa_factor</code> (nằm trong <code>credential.type</code>), <code>authz_tuple</code> (nếu tự làm ReBAC). Lưu ý PostgreSQL: index <code>(tenant_id, lower(email))</code> unique, secret/private key mã hóa envelope (KMS hoặc master key từ env), không lưu refresh token plaintext (chỉ hash).</p>
+
+<!-- 9 -->
+<h2 id="s9">9. Authorization model — đi theo 3 tầng</h2>
+<table>
+<tr><th>Tầng</th><th>Mô tả</th><th>Khi nào dùng</th><th>Lưu ở đâu</th></tr>
+<tr><td><b>1. Scope &amp; Role (RBAC)</b></td><td>User → Role → Permission. Role/scope đưa vào access token (<code>roles</code>, <code>scope</code>).</td><td>Quyền thô, ít thay đổi: admin, editor, viewer.</td><td>JWT claim + DB</td></tr>
+<tr><td><b>2. Policy (ABAC)</b></td><td>Điều kiện: department = X, giờ hành chính, IP nội bộ, giá trị đơn &lt; N. Có thể dùng CEL/Rego (OPA) hoặc rule JSON.</td><td>Quyết định phụ thuộc ngữ cảnh.</td><td>Policy store, gọi qua Check API</td></tr>
+<tr><td><b>3. Relationship (ReBAC)</b></td><td>Tuple <code>doc:42#viewer@user:levinh</code>, kế thừa qua folder/org/group.</td><td>Chia sẻ theo tài nguyên, cây tổ chức, multi-tenant B2B.</td><td>Tuple store / OpenFGA</td></tr>
+</table>
+<div class="note">Quy tắc: <b>token chỉ mang thông tin ổn định</b> (sub, tenant, roles, scope). Quyết định theo từng tài nguyên → resource server gọi <code>POST /authz/check {subject, action, resource}</code> (cache ngắn). Tránh JWT phình to và quyền bị "đóng băng" cho đến khi token hết hạn.</div>
+
+<!-- 10 -->
+<h2 id="s10">10. Security checklist (bắt buộc)</h2>
+<div class="grid">
+<div class="card"><b>Giao thức</b><ul>
+<li>PKCE bắt buộc cho public client; bỏ Implicit &amp; ROPC.</li>
+<li>Redirect URI so khớp <b>chính xác</b> (không wildcard).</li>
+<li><code>state</code>, <code>nonce</code> kiểm tra đầy đủ; validate <code>iss</code>, <code>aud</code>, <code>exp</code>.</li>
+<li>Authorization code dùng 1 lần, TTL ≤ 60s.</li>
+<li>Access token ngắn (5–15 phút), refresh rotation + reuse detection.</li>
+</ul></div>
+<div class="card"><b>Credential</b><ul>
+<li>Argon2id (hoặc bcrypt cost ≥ 12), pepper tuỳ chọn.</li>
+<li>So sánh constant-time; thông báo lỗi không lộ user tồn tại.</li>
+<li>Rate limit theo IP + account; lockout mềm; check mật khẩu bị lộ (HIBP k-anonymity).</li>
+<li>Recovery code lưu dạng hash.</li>
+</ul></div>
+<div class="card"><b>Khóa &amp; bí mật</b><ul>
+<li>Key ký RS256/ES256 theo tenant, rotate định kỳ, JWKS giữ key cũ đến khi token hết hạn.</li>
+<li>Private key &amp; client secret mã hóa at-rest.</li>
+<li>Không log token, password, secret.</li>
+</ul></div>
+<div class="card"><b>Web</b><ul>
+<li>Cookie <code>HttpOnly; Secure; SameSite</code>; CSRF cho form login.</li>
+<li>CSP, X-Frame-Options (chống clickjacking trang login), HSTS.</li>
+<li>CORS allow-list theo client.</li>
+<li>SSRF guard khi gọi discovery/JWKS upstream (chặn IP nội bộ).</li>
+</ul></div>
+<div class="card"><b>Federation</b><ul>
+<li>Account linking chỉ khi email <b>đã verified</b> ở upstream (chống account takeover).</li>
+<li>Không tin email Facebook/GitHub chưa verify.</li>
+<li>SAML: validate signature, <code>InResponseTo</code>, audience, NotOnOrAfter; chặn XXE.</li>
+</ul></div>
+<div class="card"><b>Vận hành</b><ul>
+<li>Audit mọi sự kiện auth (thành công/thất bại).</li>
+<li>Tách schema/tenant filter bắt buộc ở repository (tránh rò dữ liệu chéo tenant).</li>
+<li>Test: OIDC conformance suite, OWASP ASVS L2, dependency scan.</li>
+</ul></div>
+</div>
+
+<!-- 11 -->
+<h2 id="s11">11. Tech stack &amp; triển khai</h2>
+<table>
+<tr><th>Lớp</th><th>Lựa chọn đề xuất</th><th>Lý do</th></tr>
+<tr><td>Ngôn ngữ / framework</td><td>Java 21+, <b>Spring Boot 4 + Spring Security 7.x</b>. Spring Authorization Server đã <b>sáp nhập vào Spring Security 7.0</b> (thông báo 11/09/2025): cùng Maven coordinates <code>spring-security-oauth2-authorization-server</code>, version theo Spring Security; starter Boot 4 đổi tên <code>spring-boot-starter-security-oauth2-authorization-server</code>. Docs hiện trỏ 7.1.x là bản ổn định mới nhất – kiểm tra lại khi bắt đầu. (Nếu buộc dùng Boot 3.5 thì dùng SAS 1.5.x đứng riêng.)</td><td>Khớp stack của bạn; lõi OAuth2/OIDC đã kiểm chứng, có sẵn DPoP, token exchange (RFC 8693), PKCE mặc định, API MFA mới.</td></tr>
+<tr><td>DB</td><td>PostgreSQL 16+ (JPA/Hibernate + Flyway), partition cho audit</td><td>JSONB cho config, row-level isolation theo tenant.</td></tr>
+<tr><td>Cache / state ngắn</td><td>Redis (rate limit, login session state, OTP, authz cache)</td><td>TTL tự nhiên, nhanh.</td></tr>
+<tr><td>MFA / Passkey</td><td>Thư viện TOTP (vd. <code>java-otp</code>/<code>totp-spring-boot</code> hoặc tự dùng HMAC), <code>webauthn4j</code></td><td>Không tự viết WebAuthn.</td></tr>
+<tr><td>SAML / LDAP</td><td>Spring Security SAML2, Spring LDAP / UnboundID</td><td>Thư viện chuẩn.</td></tr>
+<tr><td>Authorization</td><td>Tự làm RBAC; ReBAC: OpenFGA (container) hoặc tuple store riêng</td><td>Đi từ đơn giản đến phức tạp.</td></tr>
+<tr><td>Admin UI</td><td>React + Vite + Tailwind</td><td>Bạn đã có kinh nghiệm.</td></tr>
+<tr><td>Test</td><td>JUnit 5, Mockito, Testcontainers (Postgres/Redis), k6 (load)</td><td>Test thật với DB thật.</td></tr>
+<tr><td>Quan sát</td><td>Micrometer + Prometheus + Grafana, OpenTelemetry, Loki/ELK</td><td>—</td></tr>
+<tr><td>Triển khai</td><td>Docker Compose (dev) → K8s + Helm (prod); stateless app, scale ngang</td><td>Session/SSO lưu Redis/PG nên scale được.</td></tr>
+</table>
+<pre class="mermaid">
+flowchart TB
+  U["Users / Apps"] --> ING["Ingress / API Gateway"]
+  ING --> A1["idp-app pod 1"]
+  ING --> A2["idp-app pod 2"]
+  A1 --> PG[("PostgreSQL primary + replica")]
+  A2 --> PG
+  A1 --> RD[("Redis")]
+  A2 --> RD
+  A1 -. optional .-> FGA["OpenFGA"]
+  A1 --> OBS["OTel Collector / Prometheus"]
+  A2 --> OBS
+  A1 --> MAIL["SMTP / SMS gateway"]
+</pre>
+
+<!-- 12 -->
+<h2 id="s12">12. Roadmap 20 ngày</h2>
+<p>Mỗi ngày ≈ 3–5 giờ làm. Chi tiết step nằm ở <code>docs/days/day-XX-*.md</code>. Cuối mỗi phase có một mốc demo.</p>
+<div class="phase"><b>Phase 0 – Nền tảng (Day 1–3)</b> · <i>Demo: đăng ký + đăng nhập local</i>
+<ol start="1"><li>Day 01 – Repo, multi-module, Docker Compose, CI</li><li>Day 02 – Domain &amp; DB schema (Flyway)</li><li>Day 03 – User + password auth + session</li></ol></div>
+<div class="phase"><b>Phase 1 – OAuth2/OIDC core (Day 4–7)</b> · <i>Demo: một SPA đăng nhập qua IDP bằng PKCE</i>
+<ol start="4"><li>Day 04 – Authorization Server, client registry, Auth Code + PKCE</li><li>Day 05 – Token, JWKS, key rotation, refresh rotation, revoke/introspect</li><li>Day 06 – OIDC: discovery, userinfo, consent, logout</li><li>Day 07 – Client credentials, device flow, token exchange, multi-tenant issuer</li></ol></div>
+<div class="phase"><b>Phase 2 – Federation (Day 8–11)</b> · <i>Demo: login bằng Google, GitHub, Keycloak; user từ DB ngoài</i>
+<ol start="8"><li>Day 08 – Broker framework + Google</li><li>Day 09 – GitHub, Facebook, account linking, claim mapping</li><li>Day 10 – Generic OIDC (Keycloak) + SAML upstream</li><li>Day 11 – User Storage SPI: external JDBC, LDAP, lazy migration</li></ol></div>
+<div class="phase"><b>Phase 3 – Strong authentication (Day 12–14)</b> · <i>Demo: MFA + passkey</i>
+<ol start="12"><li>Day 12 – TOTP + recovery codes + flow engine</li><li>Day 13 – WebAuthn / Passkeys</li><li>Day 14 – Reset password, verify email, brute-force, risk, step-up</li></ol></div>
+<div class="phase"><b>Phase 4 – Authorization (Day 15–17)</b> · <i>Demo: API được bảo vệ bằng permission</i>
+<ol start="15"><li>Day 15 – RBAC + permissions + tenant scoping</li><li>Day 16 – Check API, policy (ABAC), ReBAC</li><li>Day 17 – Starter SDK, gateway, sample apps</li></ol></div>
+<div class="phase"><b>Phase 5 – Admin &amp; Production (Day 18–20)</b> · <i>Demo: vận hành end-to-end</i>
+<ol start="18"><li>Day 18 – Admin API + UI</li><li>Day 19 – Audit, webhook, observability, GDPR</li><li>Day 20 – Hardening, conformance, load test, Helm, release</li></ol></div>
+
+<!-- 13 -->
+<h2 id="s13">13. Quyết định kiến trúc (ADR) &amp; rủi ro</h2>
+<table>
+<tr><th>#</th><th>Quyết định</th><th>Lý do</th><th>Đánh đổi</th></tr>
+<tr><td>ADR-1</td><td>Modular monolith, không microservice ngay</td><td>IdP cần nhất quán mạnh, ít latency; vận hành đơn giản.</td><td>Tách sau cần kỷ luật ranh giới module.</td></tr>
+<tr><td>ADR-2</td><td>Dùng Spring Authorization Server (nay nằm trong Spring Security 7) làm lõi</td><td>Tránh sai sót bảo mật khi tự viết OAuth2; có sẵn DPoP, token exchange; không còn lệch version giữa SAS và Security.</td><td>Phải theo cách mở rộng của framework; API đổi giữa 6.x/7.x nên đọc migration guide.</td></tr>
+<tr><td>ADR-3</td><td>Multi-tenant bằng cột <code>tenant_id</code> + issuer theo tenant (<code>/t/{slug}</code>)</td><td>Rẻ, dễ vận hành.</td><td>Cần filter bắt buộc; isolation yếu hơn schema-per-tenant.</td></tr>
+<tr><td>ADR-4</td><td>Access token = JWT ngắn hạn; refresh = opaque, lưu hash</td><td>Resource server verify offline; revoke được qua refresh.</td><td>Access token không revoke tức thì → TTL ngắn + introspection cho API nhạy cảm.</td></tr>
+<tr><td>ADR-5</td><td>Authorization tách thành service nội bộ với Check API</td><td>Cho phép nâng cấp RBAC → ReBAC không đổi token.</td><td>Thêm 1 hop; cần cache.</td></tr>
+<tr><td>ADR-6</td><td>Federation qua interface <code>FederationConnector</code> nhỏ (kiểu Dex)</td><td>Thêm provider chỉ cần 1 class + config.</td><td>Provider đặc thù cần mapping riêng.</td></tr>
+</table>
+<h3>Rủi ro chính</h3>
+<ul>
+<li><b>Account takeover qua linking</b> → chỉ link khi email verified, hỏi xác nhận nếu nghi ngờ.</li>
+<li><b>Rò dữ liệu chéo tenant</b> → tenant filter ở repository + test tự động.</li>
+<li><b>Hash legacy yếu</b> (MD5/SHA1) → chỉ dùng để xác minh, rehash ngay khi đăng nhập thành công.</li>
+<li><b>Phình scope</b> → bám đúng MVP/P1/P2; P2 chỉ làm khi MVP chạy ổn.</li>
+<li><b>Key bị lộ/mất</b> → backup mã hóa, quy trình rotate đã test.</li>
+</ul>
+
+<p style="margin-top:48px;color:var(--muted)">Tiếp theo: mở <code>docs/days/README.md</code> để bắt đầu Day 01.</p>
+</main>
+</div>
+<script type="module">
+  import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11.4.1/dist/mermaid.esm.min.mjs";
+  const dark = matchMedia("(prefers-color-scheme: dark)").matches;
+  mermaid.initialize({ startOnLoad: true, theme: dark ? "dark" : "neutral", securityLevel: "loose", flowchart: { htmlLabels: true, curve: "basis" } });
+</script>
+</body>
+</html>

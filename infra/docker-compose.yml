@@ -1,0 +1,42 @@
+name: lv-idp
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${IDP_DB_NAME:-idp}
+      POSTGRES_USER: ${IDP_DB_USER:-idp}
+      POSTGRES_PASSWORD: ${IDP_DB_PASSWORD:?Thiếu IDP_DB_PASSWORD, hãy cp .env.example .env}
+    ports:
+      - "${IDP_DB_PORT:-5433}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${IDP_DB_USER:-idp} -d ${IDP_DB_NAME:-idp}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - "${IDP_REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  mailpit:
+    image: axllent/mailpit
+    ports:
+      - "${IDP_SMTP_PORT:-1025}:1025"
+      - "${IDP_MAILPIT_UI_PORT:-8025}:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+volumes:
+  pgdata:

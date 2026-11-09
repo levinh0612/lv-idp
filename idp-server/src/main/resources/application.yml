@@ -1,0 +1,35 @@
+server:
+  port: ${IDP_SERVER_PORT:8099}    # 8080 hay bị chiếm nên dùng 8099
+
+spring:
+  application:
+    name: idp-server
+
+  datasource:
+    url: ${IDP_DB_URL:jdbc:postgresql://localhost:5434/idp}
+    username: ${IDP_DB_USER:idp}
+    password: ${IDP_DB_PASSWORD}   # không có mặc định: bắt buộc đặt qua env
+
+  jpa:
+    open-in-view: false            # tránh giữ connection DB suốt request
+    hibernate:
+      ddl-auto: none               # schema do Flyway quản lý, Hibernate không tự sửa
+
+  flyway:
+    enabled: true                  # chạy migration ở db/migration khi khởi động
+
+  data:
+    redis:
+      host: ${IDP_REDIS_HOST:localhost}
+      port: ${IDP_REDIS_PORT:6379}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info       # thêm prometheus ở Day 19, khi có micrometer-registry-prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: when-authorized

@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <!-- Parent của parent: Spring Boot cung cấp version dependency + plugin đã kiểm chứng -->
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.2</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>dev.lv</groupId>
+    <artifactId>lv-idp</artifactId>
+    <version>0.0.1-SNAPSHOT</version>
+    <packaging>pom</packaging>
+    <name>lv-idp</name>
+
+    <modules>
+        <module>idp-core</module>
+        <module>idp-persistence</module>
+        <module>idp-server</module>
+    </modules>
+
+    <properties>
+        <java.version>21</java.version>
+    </properties>
+
+    <!-- Quản lý version cho các module nội bộ: module con chỉ cần khai groupId + artifactId -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>dev.lv</groupId>
+                <artifactId>idp-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>dev.lv</groupId>
+                <artifactId>idp-persistence</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+</project>
